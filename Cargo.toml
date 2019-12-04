@@ -1,0 +1,15 @@
+[package]
+name = "curst"
+version = "0.1.0"
+authors = ["Justin Simerly <justinsimerly1992@gmail.com>"]
+edition = "2018"
+description = "Rustifying curses"
+license = "MIT"
+readme = "README.md"
+keywords = ["curses", "PDCurses"]
+categories = ["command line utilities"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pdcurses-sys = "0.7.1"
