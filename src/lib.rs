@@ -58,7 +58,12 @@ use {
 
 // Below is pdcurses API missing from pdcurses-sys.
 mod curses {
-    #![allow(clippy::missing_docs_in_private_items, clippy::expl_impl_clone_on_copy, dead_code, unreachable_pub)] // Exceptions to be made for ffi.
+    #![allow(
+        clippy::missing_docs_in_private_items,
+        clippy::expl_impl_clone_on_copy,
+        dead_code,
+        unreachable_pub
+    )] // Exceptions to be made for ffi.
 
     use {
         pdcurses::WINDOW,
@@ -279,7 +284,7 @@ pub struct Location {
 impl Location {
     /// Creates a new location.
     pub const fn new(line: u32, column: u32) -> Self {
-        Self {line, column}
+        Self { line, column }
     }
 
     /// Returns the index of the column that contains `self`.
@@ -321,8 +326,8 @@ pub struct Panel(*mut PANEL);
 impl Panel {
     /// Creates a new curses panel.
     pub fn new(window: Window) -> Result<Self, ()> {
-        let panel = unsafe{curses::new_panel(window.0)};
-        
+        let panel = unsafe { curses::new_panel(window.0) };
+
         if panel.is_null() {
             Err(())
         } else {
@@ -332,7 +337,7 @@ impl Panel {
 
     /// Returns the [`Window`] associated with `self`.
     pub fn window(&self) -> Result<Window, ()> {
-        let win = unsafe{curses::panel_window(self.0)};
+        let win = unsafe { curses::panel_window(self.0) };
 
         if win.is_null() {
             Err(())
@@ -359,7 +364,7 @@ impl Window {
     ///
     /// For now, the size and location of the window is defined statically.
     pub fn new() -> Result<Self, ()> {
-        let window = unsafe{pdcurses::newwin(10, 30, 0, 0)};
+        let window = unsafe { pdcurses::newwin(10, 30, 0, 0) };
 
         if window.is_null() {
             Err(())
@@ -373,12 +378,7 @@ impl Window {
         // Define local variable to hold lifetime throughout the function.
         let text = CString::new(s).map_err(|_| ())?;
 
-        result(unsafe {
-            pdcurses::waddstr(
-                self.0,
-                text.as_ptr()
-            )
-        })
+        result(unsafe { pdcurses::waddstr(self.0, text.as_ptr()) })
     }
 
     /// Clears `self` from the cursor to the end of the line.
@@ -487,8 +487,8 @@ impl Curses {
 
     /// Refreshes the physical screen to match the virtual screen.
     pub fn refresh(&self) -> OkOrErr {
-        unsafe{curses::update_panels()};
-        result(unsafe{pdcurses::doupdate()})
+        unsafe { curses::update_panels() };
+        result(unsafe { pdcurses::doupdate() })
     }
 
     /// Resizes the physical screen to `size`.
@@ -526,7 +526,7 @@ impl Default for Curses {
     #[inline]
     fn default() -> Self {
         Self {
-            main_window: Window(unsafe{pdcurses::initscr()}),
+            main_window: Window(unsafe { pdcurses::initscr() }),
         }
     }
 }
