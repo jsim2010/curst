@@ -9,10 +9,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Update format
+      runs: cargo fmt
+    - name: Commit files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git commit -m "Format files" -a
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Build
       run: cargo build --verbose
-    - name: Check format
-      run: cargo fmt --verbose -- --check
     - name: Lint
       run: cargo clippy --verbose
     - name: Run tests
