@@ -12,7 +12,10 @@ jobs:
     - name: Update format
       run: cargo fmt
     - name: Push changes
-      uses: mikeal/publish-to-github-action@master
+      uses: stefanzweifel/git-auto-commit-action@v2.4.0
+      with:
+        commit_message: Format files
+        branch: master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Build
