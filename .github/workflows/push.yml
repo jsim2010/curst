@@ -3,10 +3,8 @@ name: Push
 on: [push]
 
 jobs:
-  build:
-
-    runs-on: windows-latest
-
+  update:
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
     - name: Update format
@@ -18,6 +16,11 @@ jobs:
         branch: master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+  validate:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v1
     - name: Build
       run: cargo build --verbose
     - name: Lint
