@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Update format
-      runs: cargo fmt
+      run: cargo fmt
     - name: Commit files
       run: |
         git config --local user.email "action@github.com"
