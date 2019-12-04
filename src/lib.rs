@@ -42,10 +42,7 @@
 )]
 // Temporary allows.
 #![allow(
-    clippy::missing_const_for_fn, // Flags methods in derived traits.
     clippy::missing_inline_in_public_items, // Flags methods in derived traits.
-    clippy::multiple_crate_versions, // Requires redox_users update to avoid multiple versions of rand_core.
-    // See <https://gitlab.redox-os.org/redox-os/users/merge_requests/30>
 )]
 
 use {
@@ -101,7 +98,7 @@ fn result(value: c_int) -> OkOrErr {
 }
 
 /// Signifies a key on a keyboard.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Key {
     /// A key that is printable.
     Printable(char),
@@ -122,19 +119,49 @@ impl Key {
     fn get(window: Window) -> Option<Self> {
         match unsafe{pdcurses::wgetch(window.0)} {
             ERR => None,
-            key => match u32::try_from(key) {
-                Err(_) => Some(Self::Unknown(key)),
-                Ok(value) => match std::char::from_u32(value) {
-                    None => Some(Self::Unknown(key)),
-                    Some(c) => match c {
-                        CHAR_BACKSPACE => Some(Self::Backspace),
-                        CHAR_ESC => Some(Self::Esc),
-                        CHAR_TAB => Some(Self::Tab),
-                        CHAR_ENTER => Some(Self::Enter),
-                        _ => Some(Self::Printable(c)),
-                    }
+            value => Some(value.into()),
+        }
+    }
+}
+
+impl From<c_int> for Key {
+    fn from(value: c_int) -> Self {
+        match u32::try_from(value) {
+            Ok(u32_value) => match std::char::from_u32(u32_value) {
+                None => Self::Unknown(value),
+                Some(c) => match c {
+                    CHAR_BACKSPACE => Self::Backspace,
+                    CHAR_ESC => Self::Esc,
+                    CHAR_TAB => Self::Tab,
+                    CHAR_ENTER => Self::Enter,
+                    _ => Self::Printable(c),
                 }
             }
+            Err(_) => Self::Unknown(value),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_key {
+    use super::*;
+
+    #[test]
+    fn from_cint_to_key() {
+        let cases = vec![
+            (-2, Key::Unknown(-2)),
+            (0x08, Key::Backspace),
+            (0x09, Key::Tab),
+            (0x0A, Key::Enter),
+            (0x1B, Key::Esc),
+            (0x20, Key::Printable(' ')),
+            (0x30, Key::Printable('0')),
+            (0x41, Key::Printable('A')),
+            (0x61, Key::Printable('a')),
+        ];
+
+        for case in cases {
+            assert_eq!(Key::from(case.0), case.1);
         }
     }
 }
@@ -226,6 +253,7 @@ impl Window {
     ///
     /// All characters to right on the same line are moved to the left one position and the
     /// last character is filled with a blank. The cursor position does not change.
+    #[inline]
     pub fn delete_char(self) -> OkOrErr {
         result(unsafe{ pdcurses::wdelch(self.0)})
     }
@@ -233,16 +261,19 @@ impl Window {
     /// Returns an [`Input`] from the terminal.
     ///
     /// [`None`] indicates no [`Input`] was found in the specified time.
+    #[inline]
     pub fn get_input(self) -> Option<Input> {
         Input::get(self)
     }
 
     /// Moves the cursor to `location`.
+    #[inline]
     pub fn move_to(self, location: Location) -> OkOrErr {
         result(unsafe{pdcurses::wmove(self.0, location.line(), location.column())})
     }
 
     /// Returns the number of rows in `self`.
+    #[inline]
     pub fn rows(self) -> Result<NonZeroU32, ()> {
         non_zero_u32(unsafe{pdcurses::getmaxy(self.0)})
     }
@@ -250,6 +281,7 @@ impl Window {
     /// Sets how curses will block when attempting to get an [`Input`].
     ///
     /// If `timeout` is [`None`], curses will not block.
+    #[inline]
     pub fn set_block_timeout(self, timeout: Option<u32>) {
         let value = match timeout {
             None => -1,
@@ -269,6 +301,7 @@ pub struct Curses {
 
 impl Curses {
     /// Sounds the audible bell on the terminal, if possible, otherwise executes `flash`.
+    #[inline]
     pub fn beep(&self) {
         #[allow(unused_results)] // beep always returns OK when called after initscr.
         unsafe {
@@ -277,6 +310,7 @@ impl Curses {
     }
 
     /// Returns a verbose description of the current terminal.
+    #[inline]
     pub fn description(&self) -> Result<&str, Utf8Error> {
         string(unsafe {pdcurses::longname()})
     }
@@ -285,6 +319,7 @@ impl Curses {
     ///
     /// The action of flashing is specified as inverting the foreground and background of every
     /// cell, pausing, and then restoring.
+    #[inline]
     pub fn flash(&self) {
         #[allow(unused_results)] // flash always returns OK when called after initscr.
         unsafe {
@@ -293,6 +328,7 @@ impl Curses {
     }
 
     /// Returns a short description (14 characters) of the current terminal.
+    #[inline]
     pub fn name(&self) -> Result<&str, Utf8Error> {
         string(unsafe {pdcurses::termname()})
     }
@@ -300,6 +336,7 @@ impl Curses {
     /// Resizes the physical screen to `size`.
     ///
     /// Only resizes screen to a non zero value. If attempting to synchronize curses to a new screen size, use [`sync_screen_size`].
+    #[inline]
     pub fn resize_screen(&self, size: Size) -> OkOrErr {
         result(unsafe {
             pdcurses::resize_term(size.lines(), size.columns())
@@ -307,6 +344,7 @@ impl Curses {
     }
 
     /// Sets if typed characters are echoed.
+    #[inline]
     pub fn set_echo(&self, is_enabled: bool) -> OkOrErr {
         result(unsafe{if is_enabled {
             pdcurses::echo()
@@ -316,6 +354,7 @@ impl Curses {
     }
 
     /// Synchronizes curses to match the current screen size.
+    #[inline]
     pub fn sync_screen_size(&self) -> OkOrErr {
         result(unsafe { pdcurses::resize_term(0, 0) })
     }
@@ -326,6 +365,7 @@ impl Default for Curses {
     ///
     /// Ensures that initscr will be the first curses routine called. In case of error, will
     /// write a message to stderr and end the program.
+    #[inline]
     fn default() -> Self {
         let std_window = unsafe { pdcurses::initscr() };
 
@@ -336,6 +376,7 @@ impl Default for Curses {
 }
 
 impl Drop for Curses {
+    #[inline]
     fn drop(&mut self) {
         if self.standard_window.delete().is_err() {
             panic!("cannot free memory associated with standard window");
@@ -347,19 +388,3 @@ impl Drop for Curses {
         }
     }
 }
-
-// Used for debugging key input.
-//#[cfg(test)]
-//mod test {
-//    use super::*;
-//
-//    #[test]
-//    fn key() {
-//        unsafe {
-//        let w = Window(pdcurses::initscr());
-//        dbg!(Key::get(&w));
-//        pdcurses::endwin();
-//        assert!(false);
-//        }
-//    }
-//}

@@ -8,6 +8,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["curses", "PDCurses"]
 categories = ["command line utilities"]
+repository = "https://github.com/jsim2010/curst.git"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
