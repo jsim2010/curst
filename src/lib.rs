@@ -48,7 +48,11 @@
 use {
     core::{convert::TryFrom, num::NonZeroU32},
     pdcurses::{self, WINDOW},
-    std::{ffi::{CStr, CString}, os::raw::{c_int, c_char}, str::Utf8Error},
+    std::{
+        ffi::{CStr, CString},
+        os::raw::{c_char, c_int},
+        str::Utf8Error,
+    },
 };
 
 /// Represents a return value that can either be ok or an error.
@@ -70,7 +74,9 @@ const CHAR_TAB: char = '\t';
 
 /// Converts `value` to a [`NonZeroU32`].
 fn non_zero_u32(value: c_int) -> Result<NonZeroU32, ()> {
-    u32::try_from(value).map_err(|_| ()).and_then(|value| NonZeroU32::new(value).ok_or(()))
+    u32::try_from(value)
+        .map_err(|_| ())
+        .and_then(|value| NonZeroU32::new(value).ok_or(()))
 }
 
 /// Converts `value` to a [`c_int`].
@@ -85,7 +91,7 @@ fn string(ptr: *const c_char) -> Result<&'static str, Utf8Error> {
 
 /// Returns a string describing the `PDCurses` version.
 pub fn version() -> Result<&'static str, Utf8Error> {
-    string(unsafe{pdcurses::curses_version()})
+    string(unsafe { pdcurses::curses_version() })
 }
 
 /// Converts `value` into an [`OkOrErr`].
@@ -117,7 +123,7 @@ enum Key {
 impl Key {
     /// Returns the [`Key`] from the user.
     fn get(window: Window) -> Option<Self> {
-        match unsafe{pdcurses::wgetch(window.0)} {
+        match unsafe { pdcurses::wgetch(window.0) } {
             ERR => None,
             value => Some(value.into()),
         }
@@ -135,8 +141,8 @@ impl From<c_int> for Key {
                     CHAR_TAB => Self::Tab,
                     CHAR_ENTER => Self::Enter,
                     _ => Self::Printable(c),
-                }
-            }
+                },
+            },
             Err(_) => Self::Unknown(value),
         }
     }
@@ -176,9 +182,7 @@ pub struct Input {
 impl Input {
     /// Returns an [`Input`] from the terminal.
     fn get(window: Window) -> Option<Self> {
-        Key::get(window).map(|key| Self {
-            key,
-        })
+        Key::get(window).map(|key| Self { key })
     }
 }
 
@@ -231,17 +235,24 @@ pub struct Window(*mut WINDOW);
 impl Window {
     /// Writes all the characters of `s` to `self`.
     pub fn add_string(self, s: String) -> OkOrErr {
-        result(unsafe{pdcurses::waddstr(self.0, CString::new(s).map(|c_string| c_string.as_ptr()).map_err(|_| ())?)})
+        result(unsafe {
+            pdcurses::waddstr(
+                self.0,
+                CString::new(s)
+                    .map(|c_string| c_string.as_ptr())
+                    .map_err(|_| ())?,
+            )
+        })
     }
 
     /// Clears `self` from the cursor to the end of the line.
     pub fn clear_to_line_end(self) -> OkOrErr {
-        result(unsafe{pdcurses::wclrtoeol(self.0)})
+        result(unsafe { pdcurses::wclrtoeol(self.0) })
     }
 
     /// Returns the number of columns in `self`.
     pub fn columns(self) -> Result<NonZeroU32, ()> {
-        non_zero_u32(unsafe{pdcurses::getmaxx(self.0)})
+        non_zero_u32(unsafe { pdcurses::getmaxx(self.0) })
     }
 
     /// Frees memory associated with `self`.
@@ -255,7 +266,7 @@ impl Window {
     /// last character is filled with a blank. The cursor position does not change.
     #[inline]
     pub fn delete_char(self) -> OkOrErr {
-        result(unsafe{ pdcurses::wdelch(self.0)})
+        result(unsafe { pdcurses::wdelch(self.0) })
     }
 
     /// Returns an [`Input`] from the terminal.
@@ -269,13 +280,13 @@ impl Window {
     /// Moves the cursor to `location`.
     #[inline]
     pub fn move_to(self, location: Location) -> OkOrErr {
-        result(unsafe{pdcurses::wmove(self.0, location.line(), location.column())})
+        result(unsafe { pdcurses::wmove(self.0, location.line(), location.column()) })
     }
 
     /// Returns the number of rows in `self`.
     #[inline]
     pub fn rows(self) -> Result<NonZeroU32, ()> {
-        non_zero_u32(unsafe{pdcurses::getmaxy(self.0)})
+        non_zero_u32(unsafe { pdcurses::getmaxy(self.0) })
     }
 
     /// Sets how curses will block when attempting to get an [`Input`].
@@ -288,7 +299,7 @@ impl Window {
             Some(ms) => c_int::try_from(ms).unwrap_or(c_int::max_value()),
         };
 
-        unsafe{ pdcurses::wtimeout(self.0, value)};
+        unsafe { pdcurses::wtimeout(self.0, value) };
     }
 }
 
@@ -312,7 +323,7 @@ impl Curses {
     /// Returns a verbose description of the current terminal.
     #[inline]
     pub fn description(&self) -> Result<&str, Utf8Error> {
-        string(unsafe {pdcurses::longname()})
+        string(unsafe { pdcurses::longname() })
     }
 
     /// Flashes the terminal screen.
@@ -330,7 +341,7 @@ impl Curses {
     /// Returns a short description (14 characters) of the current terminal.
     #[inline]
     pub fn name(&self) -> Result<&str, Utf8Error> {
-        string(unsafe {pdcurses::termname()})
+        string(unsafe { pdcurses::termname() })
     }
 
     /// Resizes the physical screen to `size`.
@@ -338,19 +349,19 @@ impl Curses {
     /// Only resizes screen to a non zero value. If attempting to synchronize curses to a new screen size, use [`sync_screen_size`].
     #[inline]
     pub fn resize_screen(&self, size: Size) -> OkOrErr {
-        result(unsafe {
-            pdcurses::resize_term(size.lines(), size.columns())
-        })
+        result(unsafe { pdcurses::resize_term(size.lines(), size.columns()) })
     }
 
     /// Sets if typed characters are echoed.
     #[inline]
     pub fn set_echo(&self, is_enabled: bool) -> OkOrErr {
-        result(unsafe{if is_enabled {
-            pdcurses::echo()
-        } else {
-            pdcurses::noecho()
-        }})
+        result(unsafe {
+            if is_enabled {
+                pdcurses::echo()
+            } else {
+                pdcurses::noecho()
+            }
+        })
     }
 
     /// Synchronizes curses to match the current screen size.
