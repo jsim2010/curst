@@ -47,6 +47,7 @@
 
 use {
     core::{convert::TryFrom, num::NonZeroU32},
+    curses::PANEL,
     pdcurses::{self, WINDOW},
     std::{
         ffi::{CStr, CString},
@@ -54,6 +55,81 @@ use {
         str::Utf8Error,
     },
 };
+
+// Below is pdcurses API missing from pdcurses-sys.
+mod curses {
+    #![allow(clippy::missing_docs_in_private_items, clippy::expl_impl_clone_on_copy, dead_code, unreachable_pub)] // Exceptions to be made for ffi.
+
+    use {
+        pdcurses::WINDOW,
+        std::os::raw::{c_int, c_void},
+    };
+
+    #[repr(C)]
+    #[derive(Copy)]
+    pub struct Struct_panelobs {
+        pub above: *mut Struct_panelobs,
+        pub pan: *mut Struct_panel,
+    }
+
+    impl Clone for Struct_panelobs {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+
+    impl Default for Struct_panelobs {
+        fn default() -> Self {
+            unsafe { std::mem::zeroed() }
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Copy)]
+    pub struct Struct_panel {
+        pub win: *mut WINDOW,
+        pub wstarty: c_int,
+        pub wendy: c_int,
+        pub wstartx: c_int,
+        pub wendx: c_int,
+        pub below: *mut Struct_panel,
+        pub above: *mut Struct_panel,
+        pub user: *const c_void,
+        pub obscure: *mut Struct_panelobs,
+    }
+
+    impl Clone for Struct_panel {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+
+    impl Default for Struct_panel {
+        fn default() -> Self {
+            unsafe { std::mem::zeroed() }
+        }
+    }
+
+    pub type PANEL = Struct_panel;
+
+    extern "C" {
+        pub fn bottom_panel(arg1: *mut PANEL) -> c_int;
+        pub fn del_panel(arg1: *mut PANEL) -> c_int;
+        pub fn hide_panel(arg1: *mut PANEL) -> c_int;
+        pub fn move_panel(arg1: *mut PANEL, arg2: c_int, arg3: c_int) -> c_int;
+        pub fn new_panel(arg1: *mut WINDOW) -> *mut PANEL;
+        pub fn panel_above(arg1: *const PANEL) -> *mut PANEL;
+        pub fn panel_below(arg1: *const PANEL) -> *mut PANEL;
+        pub fn panel_hidden(arg1: *const PANEL) -> c_int;
+        pub fn panel_userptr(arg1: *const PANEL) -> *const c_void;
+        pub fn panel_window(arg1: *const PANEL) -> *mut WINDOW;
+        pub fn replace_panel(arg1: *mut PANEL, arg2: *mut WINDOW) -> c_int;
+        pub fn set_panel_userptr(arg1: *mut PANEL, arg2: *const c_void) -> c_int;
+        pub fn show_panel(arg1: *mut PANEL) -> c_int;
+        pub fn top_panel(arg1: *mut PANEL) -> c_int;
+        pub fn update_panels();
+    }
+}
 
 /// Represents a return value that can either be ok or an error.
 type OkOrErr = Result<(), ()>;
@@ -104,8 +180,8 @@ fn result(value: c_int) -> OkOrErr {
 }
 
 /// Signifies a key on a keyboard.
-#[derive(Debug, PartialEq)]
-enum Key {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Key {
     /// A key that is printable.
     Printable(char),
     /// The `Backspace` key.
@@ -173,7 +249,7 @@ mod test_key {
 }
 
 /// Signifies an input from the user.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Input {
     /// The [`Key`] from the user.
     key: Key,
@@ -183,6 +259,11 @@ impl Input {
     /// Returns an [`Input`] from the terminal.
     fn get(window: Window) -> Option<Self> {
         Key::get(window).map(|key| Self { key })
+    }
+
+    /// Returns the [`Key`] of `self`.
+    pub const fn key(&self) -> &Key {
+        &self.key
     }
 }
 
@@ -196,6 +277,11 @@ pub struct Location {
 }
 
 impl Location {
+    /// Creates a new location.
+    pub const fn new(line: u32, column: u32) -> Self {
+        Self {line, column}
+    }
+
     /// Returns the index of the column that contains `self`.
     fn column(self) -> c_int {
         int(self.column)
@@ -228,19 +314,69 @@ impl Size {
     }
 }
 
+/// Signifies a curses panel.
+#[derive(Debug)]
+pub struct Panel(*mut PANEL);
+
+impl Panel {
+    /// Creates a new curses panel.
+    pub fn new(window: Window) -> Result<Self, ()> {
+        let panel = unsafe{curses::new_panel(window.0)};
+        
+        if panel.is_null() {
+            Err(())
+        } else {
+            Ok(Self(panel))
+        }
+    }
+
+    /// Returns the [`Window`] associated with `self`.
+    pub fn window(&self) -> Result<Window, ()> {
+        let win = unsafe{curses::panel_window(self.0)};
+
+        if win.is_null() {
+            Err(())
+        } else {
+            Ok(Window(win))
+        }
+    }
+}
+
+impl Drop for Panel {
+    fn drop(&mut self) {
+        if result(unsafe { curses::del_panel(self.0) }).is_err() {
+            panic!("cannot free memory associated with panel");
+        }
+    }
+}
+
 /// Represents a curses window.
 #[derive(Clone, Copy, Debug)]
 pub struct Window(*mut WINDOW);
 
 impl Window {
+    /// Creates a new curses window.
+    ///
+    /// For now, the size and location of the window is defined statically.
+    pub fn new() -> Result<Self, ()> {
+        let window = unsafe{pdcurses::newwin(10, 30, 0, 0)};
+
+        if window.is_null() {
+            Err(())
+        } else {
+            Ok(Self(window))
+        }
+    }
+
     /// Writes all the characters of `s` to `self`.
     pub fn add_string(self, s: String) -> OkOrErr {
+        // Define local variable to hold lifetime throughout the function.
+        let text = CString::new(s).map_err(|_| ())?;
+
         result(unsafe {
             pdcurses::waddstr(
                 self.0,
-                CString::new(s)
-                    .map(|c_string| c_string.as_ptr())
-                    .map_err(|_| ())?,
+                text.as_ptr()
             )
         })
     }
@@ -307,7 +443,7 @@ impl Window {
 #[derive(Debug)]
 pub struct Curses {
     /// The default window that covers the entire physical screen.
-    standard_window: Window,
+    main_window: Window,
 }
 
 impl Curses {
@@ -338,10 +474,21 @@ impl Curses {
         }
     }
 
+    /// Returns the default window for the terminal.
+    pub const fn main_window(&self) -> &Window {
+        &self.main_window
+    }
+
     /// Returns a short description (14 characters) of the current terminal.
     #[inline]
     pub fn name(&self) -> Result<&str, Utf8Error> {
         string(unsafe { pdcurses::termname() })
+    }
+
+    /// Refreshes the physical screen to match the virtual screen.
+    pub fn refresh(&self) -> OkOrErr {
+        unsafe{curses::update_panels()};
+        result(unsafe{pdcurses::doupdate()})
     }
 
     /// Resizes the physical screen to `size`.
@@ -378,10 +525,8 @@ impl Default for Curses {
     /// write a message to stderr and end the program.
     #[inline]
     fn default() -> Self {
-        let std_window = unsafe { pdcurses::initscr() };
-
         Self {
-            standard_window: Window(std_window),
+            main_window: Window(unsafe{pdcurses::initscr()}),
         }
     }
 }
@@ -389,7 +534,7 @@ impl Default for Curses {
 impl Drop for Curses {
     #[inline]
     fn drop(&mut self) {
-        if self.standard_window.delete().is_err() {
+        if self.main_window.delete().is_err() {
             panic!("cannot free memory associated with standard window");
         }
 
