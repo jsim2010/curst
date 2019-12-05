@@ -1,4 +1,4 @@
-/// Defines pdcurses API missing from pdcurses-sys.
+//! Defines pdcurses API missing from pdcurses-sys.
 #![allow(
     clippy::missing_docs_in_private_items,
     clippy::expl_impl_clone_on_copy,
