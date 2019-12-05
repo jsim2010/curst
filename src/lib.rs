@@ -26,6 +26,7 @@
     unused_lifetimes,
     unused_qualifications,
     unused_results,
+    unsafe_code,
     variant_size_differences,
     clippy::cargo,
     clippy::nursery,
@@ -37,7 +38,6 @@
     clippy::implicit_return, // Goes against rust convention and requires return calls in places it is not helpful (e.g. closures).
     clippy::suspicious_arithmetic_impl, // Not always valid; issues should be detected by tests or other lints.
     clippy::suspicious_op_assign_impl, // Not always valid; issues should be detected by tests or other lints.
-    unsafe_code, // The nature of this library requires a lot of usages of unsafe code.
     variant_size_differences, // Generally okay.
 )]
 // Temporary allows.
@@ -89,12 +89,13 @@ fn int(value: u32) -> c_int {
 
 /// Converts `ptr` to a [`&str`].
 fn string(ptr: *const c_char) -> Result<&'static str, Utf8Error> {
+    #[allow(unsafe_code)] // Required to create CStr.
     unsafe { CStr::from_ptr(ptr) }.to_str()
 }
 
 /// Returns a string describing the `PDCurses` version.
 pub fn version() -> Result<&'static str, Utf8Error> {
-    string(unsafe { pdcurses::curses_version() })
+    string(curses::curses_version())
 }
 
 /// Converts `value` into an [`OkOrErr`].
@@ -126,7 +127,7 @@ pub enum Key {
 impl Key {
     /// Returns the [`Key`] from the user.
     fn get(window: Window) -> Option<Self> {
-        match unsafe { pdcurses::wgetch(window.0) } {
+        match curses::wgetch(window.0) {
             ERR => None,
             value => Some(value.into()),
         }
@@ -147,30 +148,6 @@ impl From<c_int> for Key {
                 },
             },
             Err(_) => Self::Unknown(value),
-        }
-    }
-}
-
-#[cfg(test)]
-mod test_key {
-    use super::*;
-
-    #[test]
-    fn from_cint_to_key() {
-        let cases = vec![
-            (-2, Key::Unknown(-2)),
-            (0x08, Key::Backspace),
-            (0x09, Key::Tab),
-            (0x0A, Key::Enter),
-            (0x1B, Key::Esc),
-            (0x20, Key::Printable(' ')),
-            (0x30, Key::Printable('0')),
-            (0x41, Key::Printable('A')),
-            (0x61, Key::Printable('a')),
-        ];
-
-        for case in cases {
-            assert_eq!(Key::from(case.0), case.1);
         }
     }
 }
@@ -248,7 +225,7 @@ pub struct Panel(*mut PANEL);
 impl Panel {
     /// Creates a new curses panel.
     pub fn new(window: Window) -> Result<Self, ()> {
-        let panel = unsafe { curses::new_panel(window.0) };
+        let panel = curses::new_panel(window.0);
 
         if panel.is_null() {
             Err(())
@@ -259,7 +236,7 @@ impl Panel {
 
     /// Returns the [`Window`] associated with `self`.
     pub fn window(&self) -> Result<Window, ()> {
-        let win = unsafe { curses::panel_window(self.0) };
+        let win = curses::panel_window(self.0);
 
         if win.is_null() {
             Err(())
@@ -271,7 +248,7 @@ impl Panel {
 
 impl Drop for Panel {
     fn drop(&mut self) {
-        if result(unsafe { curses::del_panel(self.0) }).is_err() {
+        if result(curses::del_panel(self.0)).is_err() {
             panic!("cannot free memory associated with panel");
         }
     }
@@ -286,7 +263,7 @@ impl Window {
     ///
     /// For now, the size and location of the window is defined statically.
     pub fn new() -> Result<Self, ()> {
-        let window = unsafe { pdcurses::newwin(10, 30, 0, 0) };
+        let window = curses::newwin(10, 30, 0, 0);
 
         if window.is_null() {
             Err(())
@@ -300,22 +277,22 @@ impl Window {
         // Define local variable to hold lifetime throughout the function.
         let text = CString::new(s).map_err(|_| ())?;
 
-        result(unsafe { pdcurses::waddstr(self.0, text.as_ptr()) })
+        result(curses::waddstr(self.0, text.as_ptr()))
     }
 
     /// Clears `self` from the cursor to the end of the line.
     pub fn clear_to_line_end(self) -> OkOrErr {
-        result(unsafe { pdcurses::wclrtoeol(self.0) })
+        result(curses::wclrtoeol(self.0))
     }
 
     /// Returns the number of columns in `self`.
     pub fn columns(self) -> Result<NonZeroU32, ()> {
-        non_zero_u32(unsafe { pdcurses::getmaxx(self.0) })
+        non_zero_u32(curses::getmaxx(self.0))
     }
 
     /// Frees memory associated with `self`.
     fn delete(self) -> OkOrErr {
-        result(unsafe { pdcurses::delwin(self.0) })
+        result(curses::delwin(self.0))
     }
 
     /// Deletes the character under the cursor.
@@ -324,7 +301,7 @@ impl Window {
     /// last character is filled with a blank. The cursor position does not change.
     #[inline]
     pub fn delete_char(self) -> OkOrErr {
-        result(unsafe { pdcurses::wdelch(self.0) })
+        result(curses::wdelch(self.0))
     }
 
     /// Returns an [`Input`] from the terminal.
@@ -338,13 +315,13 @@ impl Window {
     /// Moves the cursor to `location`.
     #[inline]
     pub fn move_to(self, location: Location) -> OkOrErr {
-        result(unsafe { pdcurses::wmove(self.0, location.line(), location.column()) })
+        result(curses::wmove(self.0, location.line(), location.column()))
     }
 
     /// Returns the number of rows in `self`.
     #[inline]
     pub fn rows(self) -> Result<NonZeroU32, ()> {
-        non_zero_u32(unsafe { pdcurses::getmaxy(self.0) })
+        non_zero_u32(curses::getmaxy(self.0))
     }
 
     /// Sets how curses will block when attempting to get an [`Input`].
@@ -357,7 +334,7 @@ impl Window {
             Some(ms) => c_int::try_from(ms).unwrap_or(c_int::max_value()),
         };
 
-        unsafe { pdcurses::wtimeout(self.0, value) };
+        curses::wtimeout(self.0, value);
     }
 }
 
@@ -373,15 +350,15 @@ impl Curses {
     #[inline]
     pub fn beep(&self) {
         #[allow(unused_results)] // beep always returns OK when called after initscr.
-        unsafe {
-            pdcurses::beep();
+        {
+            curses::beep();
         }
     }
 
     /// Returns a verbose description of the current terminal.
     #[inline]
     pub fn description(&self) -> Result<&str, Utf8Error> {
-        string(unsafe { pdcurses::longname() })
+        string(curses::longname())
     }
 
     /// Flashes the terminal screen.
@@ -391,8 +368,8 @@ impl Curses {
     #[inline]
     pub fn flash(&self) {
         #[allow(unused_results)] // flash always returns OK when called after initscr.
-        unsafe {
-            pdcurses::flash();
+        {
+            curses::flash();
         }
     }
 
@@ -404,13 +381,13 @@ impl Curses {
     /// Returns a short description (14 characters) of the current terminal.
     #[inline]
     pub fn name(&self) -> Result<&str, Utf8Error> {
-        string(unsafe { pdcurses::termname() })
+        string(curses::termname())
     }
 
     /// Refreshes the physical screen to match the virtual screen.
     pub fn refresh(&self) -> OkOrErr {
-        unsafe { curses::update_panels() };
-        result(unsafe { pdcurses::doupdate() })
+        curses::update_panels();
+        result(curses::doupdate())
     }
 
     /// Resizes the physical screen to `size`.
@@ -418,25 +395,25 @@ impl Curses {
     /// Only resizes screen to a non zero value. If attempting to synchronize curses to a new screen size, use [`sync_screen_size`].
     #[inline]
     pub fn resize_screen(&self, size: Size) -> OkOrErr {
-        result(unsafe { pdcurses::resize_term(size.lines(), size.columns()) })
+        result(curses::resize_term(size.lines(), size.columns()))
     }
 
     /// Sets if typed characters are echoed.
     #[inline]
     pub fn set_echo(&self, is_enabled: bool) -> OkOrErr {
-        result(unsafe {
+        result(
             if is_enabled {
-                pdcurses::echo()
+                curses::echo()
             } else {
-                pdcurses::noecho()
+                curses::noecho()
             }
-        })
+        )
     }
 
     /// Synchronizes curses to match the current screen size.
     #[inline]
     pub fn sync_screen_size(&self) -> OkOrErr {
-        result(unsafe { pdcurses::resize_term(0, 0) })
+        result(curses::resize_term(0, 0))
     }
 }
 
@@ -448,7 +425,7 @@ impl Default for Curses {
     #[inline]
     fn default() -> Self {
         Self {
-            main_window: Window(unsafe { pdcurses::initscr() }),
+            main_window: Window(curses::initscr()),
         }
     }
 }
@@ -460,9 +437,9 @@ impl Drop for Curses {
             panic!("cannot free memory associated with standard window");
         }
 
-        #[allow(unused_results)] // endwin always returns OK.
-        unsafe {
-            pdcurses::endwin();
+        #[allow(unused_results)]
+        {
+            curses::endwin();
         }
     }
 }
