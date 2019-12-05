@@ -95,7 +95,7 @@ pub(crate) fn beep() -> c_int {
 
 #[inline]
 pub(crate) fn curses_version() -> *const c_char {
-    unsafe{ pdcurses::curses_version() }
+    unsafe { pdcurses::curses_version() }
 }
 
 #[inline]
@@ -114,7 +114,7 @@ pub(crate) fn doupdate() -> c_int {
 
 #[inline]
 pub(crate) fn echo() -> c_int {
-    unsafe{ pdcurses::echo() }
+    unsafe { pdcurses::echo() }
 }
 
 #[inline]
@@ -168,7 +168,7 @@ pub(crate) fn panel_window(arg1: *mut PANEL) -> *mut WINDOW {
 }
 
 #[inline]
-pub(crate) fn resize_term(lines: c_int, columns: c_int) -> c_int{ 
+pub(crate) fn resize_term(lines: c_int, columns: c_int) -> c_int {
     unsafe { pdcurses::resize_term(lines, columns) }
 }
 
@@ -199,7 +199,7 @@ pub(crate) fn wdelch(arg1: *mut WINDOW) -> c_int {
 
 #[inline]
 pub(crate) fn wgetch(arg1: *mut WINDOW) -> c_int {
-    unsafe{ pdcurses::wgetch(arg1) }
+    unsafe { pdcurses::wgetch(arg1) }
 }
 
 #[inline]

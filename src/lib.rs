@@ -401,13 +401,11 @@ impl Curses {
     /// Sets if typed characters are echoed.
     #[inline]
     pub fn set_echo(&self, is_enabled: bool) -> OkOrErr {
-        result(
-            if is_enabled {
-                curses::echo()
-            } else {
-                curses::noecho()
-            }
-        )
+        result(if is_enabled {
+            curses::echo()
+        } else {
+            curses::noecho()
+        })
     }
 
     /// Synchronizes curses to match the current screen size.
