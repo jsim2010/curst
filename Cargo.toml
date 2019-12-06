@@ -20,4 +20,4 @@ parse-display = "0.1.1"
 pdcurses-sys = "0.7.1"
 
 [target.'cfg(unix)'.dependencies]
-ncurses = "5.99.0"
+ncurses = { version = "5.99.0", features = ["panel"]}
