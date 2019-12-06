@@ -2,6 +2,7 @@
 //!
 //! # Features
 //!
+//! - Independent of platform (works on both windows and unix).
 //! - Application logic is safe and intuitive.
 //! - All operations that may fail return a [`Result`] with an informative [`Err`].
 #![warn(
@@ -57,13 +58,12 @@ use {
         convert::TryFrom,
         num::{NonZeroU32, TryFromIntError},
     },
-    curses::PANEL,
+    curses::{PANEL, WINDOW},
     displaydoc::Display as DocDisplay,
     parse_display::Display as ParseDisplay,
-    pdcurses::{self, WINDOW},
     std::{
-        ffi::{CStr, CString, NulError},
-        os::raw::{c_char, c_int},
+        ffi::NulError,
+        os::raw::c_int,
         str::Utf8Error,
     },
 };
@@ -85,11 +85,6 @@ const CHAR_ESC: char = '\u{1b}';
 /// The [`char`] that represents the `Tab` key.
 const CHAR_TAB: char = '\t';
 
-/// Returns a string describing the `PDCurses` version.
-pub fn version() -> CurstResult<&'static str> {
-    string(curses::curses_version())
-}
-
 /// Converts `value` to a [`NonZeroU32`].
 fn non_zero_u32(value: c_int) -> CurstResult<NonZeroU32> {
     NonZeroU32::new(u32::try_from(value)?).ok_or(Error::InvalidZero)
@@ -107,12 +102,6 @@ fn result(curses_return: c_int, error: CursesError) -> CurstResult<()> {
     } else {
         Err(Error::Curses(error))
     }
-}
-
-/// Converts `ptr` to a [`&str`].
-fn string(ptr: *const c_char) -> CurstResult<&'static str> {
-    #[allow(unsafe_code)] // Required to create CStr.
-    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(Error::from)
 }
 
 /// Signifies an error during a `curses` function call.
@@ -267,7 +256,7 @@ impl Location {
 
 /// Signifies a curses panel.
 #[derive(Debug)]
-pub struct Panel(*mut PANEL);
+pub struct Panel(PANEL);
 
 impl Panel {
     /// Creates a new curses panel.
@@ -322,7 +311,7 @@ impl Size {
 
 /// Represents a curses window.
 #[derive(Clone, Copy, Debug)]
-pub struct Window(*mut WINDOW);
+pub struct Window(WINDOW);
 
 impl Window {
     /// Creates a new curses window.
@@ -339,11 +328,8 @@ impl Window {
     }
 
     /// Writes all the characters of `s` to `self`.
-    pub fn add_string(self, s: String) -> CurstResult<()> {
-        // Define local variable to hold lifetime throughout the function.
-        let text = CString::new(s)?;
-
-        result(curses::waddstr(self.0, text.as_ptr()), CursesError::Waddstr)
+    pub fn add_string(self, s: &str) -> CurstResult<()> {
+        result(curses::waddstr(self.0, s), CursesError::Waddstr)
     }
 
     /// Clears `self` from the cursor to the end of the line.
@@ -426,8 +412,8 @@ impl Curses {
 
     /// Returns a verbose description of the current terminal.
     #[inline]
-    pub fn description(&self) -> CurstResult<&str> {
-        string(curses::longname())
+    pub fn description(&self) -> String {
+        curses::longname()
     }
 
     /// Flashes the terminal screen.
@@ -449,8 +435,8 @@ impl Curses {
 
     /// Returns a short description (14 characters) of the current terminal.
     #[inline]
-    pub fn name(&self) -> CurstResult<&str> {
-        string(curses::termname())
+    pub fn name(&self) -> String {
+        curses::termname()
     }
 
     /// Refreshes the physical screen to match the virtual screen.

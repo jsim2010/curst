@@ -19,8 +19,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
   validate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     needs: update
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v1

@@ -15,4 +15,9 @@ repository = "https://github.com/jsim2010/curst.git"
 [dependencies]
 displaydoc = "0.1.5"
 parse-display = "0.1.1"
+
+[target.'cfg(windows)'.dependencies]
 pdcurses-sys = "0.7.1"
+
+[target.'cfg(unix)'.dependencies]
+ncurses = "5.99.0"
