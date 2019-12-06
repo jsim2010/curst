@@ -2,6 +2,6 @@
 #[cfg(windows)]
 mod windows;
 #[cfg(unix)]
-use ncurses::*;
+pub(crate) use ncurses::*;
 #[cfg(windows)]
 pub(crate) use windows::*;
