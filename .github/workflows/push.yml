@@ -27,6 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v1
+      - name: Init
+        if: ${{ matrix.os }} == ubuntu-latest
+        run: sudo apt-get install libncurses5-dev
       - name: Build
         run: cargo build --verbose
       - name: Lint
