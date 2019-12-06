@@ -7,7 +7,10 @@
 
 use {
     pdcurses,
-    std::{ffi::{CStr, CString}, os::raw::c_char},
+    std::{
+        ffi::{CStr, CString},
+        os::raw::c_char,
+    },
 };
 
 // Bindings missing from pdcurses.

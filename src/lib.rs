@@ -61,11 +61,7 @@ use {
     curses::{PANEL, WINDOW},
     displaydoc::Display as DocDisplay,
     parse_display::Display as ParseDisplay,
-    std::{
-        ffi::NulError,
-        os::raw::c_int,
-        str::Utf8Error,
-    },
+    std::{ffi::NulError, os::raw::c_int, str::Utf8Error},
 };
 
 /// Signifies the return type of an operation that will either return `T` or fail.
