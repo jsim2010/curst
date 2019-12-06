@@ -1,4 +1,9 @@
-//! Rustifies curses.
+//! Creates an interface to `curses` that follows `rust` conventions.
+//!
+//! # Features
+//!
+//! - Application logic is safe and intuitive.
+//! - All operations that may fail return a [`Result`] with an informative [`Err`].
 #![warn(
     absolute_paths_not_starting_with_crate,
     anonymous_parameters,
@@ -48,22 +53,24 @@
 mod curses;
 
 use {
-    core::{convert::TryFrom, num::NonZeroU32},
+    core::{convert::TryFrom, num::{TryFromIntError, NonZeroU32}},
     curses::PANEL,
+    displaydoc::Display as DocDisplay,
+    parse_display::Display as ParseDisplay,
     pdcurses::{self, WINDOW},
     std::{
-        ffi::{CStr, CString},
+        ffi::{CStr, CString, NulError},
         os::raw::{c_char, c_int},
         str::Utf8Error,
     },
 };
 
-/// Represents a return value that can either be ok or an error.
-type OkOrErr = Result<(), ()>;
+/// Signifies the return type of an operation that will either return `T` or fail.
+type CurstResult<T> = Result<T, Error>;
 
-/// The return value that indicates no errors occurred.
+/// The `curses` return value that signifies a successful operation.
 const OK: c_int = 0;
-/// The return value that indicates an error occurred.
+/// The `curses` return value that signifies an error occurred.
 const ERR: c_int = -1;
 
 /// The [`char`] that represents the `Backspace` key.
@@ -75,11 +82,14 @@ const CHAR_ESC: char = '\u{1b}';
 /// The [`char`] that represents the `Tab` key.
 const CHAR_TAB: char = '\t';
 
+/// Returns a string describing the `PDCurses` version.
+pub fn version() -> CurstResult<&'static str> {
+    string(curses::curses_version())
+}
+
 /// Converts `value` to a [`NonZeroU32`].
-fn non_zero_u32(value: c_int) -> Result<NonZeroU32, ()> {
-    u32::try_from(value)
-        .map_err(|_| ())
-        .and_then(|value| NonZeroU32::new(value).ok_or(()))
+fn non_zero_u32(value: c_int) -> CurstResult<NonZeroU32> {
+    NonZeroU32::new(u32::try_from(value)?).ok_or(Error::InvalidZero)
 }
 
 /// Converts `value` to a [`c_int`].
@@ -87,27 +97,101 @@ fn int(value: u32) -> c_int {
     c_int::try_from(value).unwrap_or(c_int::max_value())
 }
 
-/// Converts `ptr` to a [`&str`].
-fn string(ptr: *const c_char) -> Result<&'static str, Utf8Error> {
-    #[allow(unsafe_code)] // Required to create CStr.
-    unsafe { CStr::from_ptr(ptr) }.to_str()
-}
-
-/// Returns a string describing the `PDCurses` version.
-pub fn version() -> Result<&'static str, Utf8Error> {
-    string(curses::curses_version())
-}
-
-/// Converts `value` into an [`OkOrErr`].
-fn result(value: c_int) -> OkOrErr {
-    if value == OK {
+/// Converts `curses_return` into an [`OkOrErr`].
+fn result(curses_return: c_int, error: CursesError) -> CurstResult<()> {
+    if curses_return == OK {
         Ok(())
     } else {
-        Err(())
+        Err(Error::Curses(error))
     }
 }
 
-/// Signifies a key on a keyboard.
+/// Converts `ptr` to a [`&str`].
+fn string(ptr: *const c_char) -> CurstResult<&'static str> {
+    #[allow(unsafe_code)] // Required to create CStr.
+    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(Error::from)
+}
+
+/// Signifies an error during a `curses` function call.
+#[derive(Clone, Copy, Debug, ParseDisplay)]
+#[display("during call to `{}()`")]
+#[display(style = "snake_case")]
+#[allow(clippy::missing_docs_in_private_items, missing_docs)] // Documentation would be repetitive.
+pub enum CursesError {
+    NewPanel,
+    PanelWindow,
+    Wdelch,
+    Wmove,
+    Doupdate,
+    Echo,
+    Noecho,
+    ResizeTerm,
+    Newwin,
+    DelPanel,
+    Waddstr,
+    Wclrtoeol,
+    Delwin,
+}
+
+/// Signifies a `curst` error.
+#[derive(Debug, DocDisplay)]
+pub enum Error {
+    /// curses: {0}
+    Curses(CursesError),
+    /// invalid string from curses: {0}
+    InvalidCursesString(Utf8Error),
+    /// invalid string from user: {0}
+    InvalidUserString(NulError),
+    /// invalid conversion: {0}
+    InvalidNumberConversion(TryFromIntError),
+    /// number cannot be `0`
+    InvalidZero,
+}
+
+impl From<CursesError> for Error {
+    fn from(value: CursesError) -> Self {
+        Self::Curses(value)
+    }
+}
+
+impl From<NulError> for Error {
+    fn from(value: NulError) -> Self {
+        Self::InvalidUserString(value)
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(value: TryFromIntError) -> Self {
+        Self::InvalidNumberConversion(value)
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(value: Utf8Error) -> Self {
+        Self::InvalidCursesString(value)
+    }
+}
+
+/// Signifies an input from the user.
+#[derive(Clone, Copy, Debug)]
+pub struct Input {
+    /// The [`Key`] from the user.
+    key: Key,
+}
+
+impl Input {
+    /// Returns an [`Input`] from the terminal.
+    fn get(window: Window) -> Option<Self> {
+        Key::get(window).map(|key| Self { key })
+    }
+
+    /// Returns the [`Key`] of `self`.
+    pub const fn key(&self) -> &Key {
+        &self.key
+    }
+}
+
+/// Signifies a key on a computer keyboard.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Key {
     /// A key that is printable.
@@ -152,26 +236,7 @@ impl From<c_int> for Key {
     }
 }
 
-/// Signifies an input from the user.
-#[derive(Clone, Copy, Debug)]
-pub struct Input {
-    /// The [`Key`] from the user.
-    key: Key,
-}
-
-impl Input {
-    /// Returns an [`Input`] from the terminal.
-    fn get(window: Window) -> Option<Self> {
-        Key::get(window).map(|key| Self { key })
-    }
-
-    /// Returns the [`Key`] of `self`.
-    pub const fn key(&self) -> &Key {
-        &self.key
-    }
-}
-
-/// Signifies the location of a cell in the terminal.
+/// Signifies the location of a cell in a terminal.
 #[derive(Clone, Copy, Debug)]
 pub struct Location {
     /// The index of the line.
@@ -197,7 +262,41 @@ impl Location {
     }
 }
 
-/// Signifies the size of the terminal.
+/// Signifies a curses panel.
+#[derive(Debug)]
+pub struct Panel(*mut PANEL);
+
+impl Panel {
+    /// Creates a new curses panel.
+    pub fn new(window: Window) -> CurstResult<Self> {
+        let panel = curses::new_panel(window.0);
+
+        if panel.is_null() {
+            Err(CursesError::NewPanel.into())
+        } else {
+            Ok(Self(panel))
+        }
+    }
+
+    /// Returns the [`Window`] associated with `self`.
+    pub fn window(&self) -> CurstResult<Window> {
+        let win = curses::panel_window(self.0);
+
+        if win.is_null() {
+            Err(CursesError::PanelWindow.into())
+        } else {
+            Ok(Window(win))
+        }
+    }
+}
+
+impl Drop for Panel {
+    fn drop(&mut self) {
+        result(curses::del_panel(self.0), CursesError::DelPanel).expect("dropping `Panel`")
+    }
+}
+
+/// Signifies the size of a terminal.
 #[derive(Clone, Copy, Debug)]
 pub struct Size {
     /// The number of lines.
@@ -218,42 +317,6 @@ impl Size {
     }
 }
 
-/// Signifies a curses panel.
-#[derive(Debug)]
-pub struct Panel(*mut PANEL);
-
-impl Panel {
-    /// Creates a new curses panel.
-    pub fn new(window: Window) -> Result<Self, ()> {
-        let panel = curses::new_panel(window.0);
-
-        if panel.is_null() {
-            Err(())
-        } else {
-            Ok(Self(panel))
-        }
-    }
-
-    /// Returns the [`Window`] associated with `self`.
-    pub fn window(&self) -> Result<Window, ()> {
-        let win = curses::panel_window(self.0);
-
-        if win.is_null() {
-            Err(())
-        } else {
-            Ok(Window(win))
-        }
-    }
-}
-
-impl Drop for Panel {
-    fn drop(&mut self) {
-        if result(curses::del_panel(self.0)).is_err() {
-            panic!("cannot free memory associated with panel");
-        }
-    }
-}
-
 /// Represents a curses window.
 #[derive(Clone, Copy, Debug)]
 pub struct Window(*mut WINDOW);
@@ -262,37 +325,37 @@ impl Window {
     /// Creates a new curses window.
     ///
     /// For now, the size and location of the window is defined statically.
-    pub fn new() -> Result<Self, ()> {
+    pub fn new() -> CurstResult<Self> {
         let window = curses::newwin(10, 30, 0, 0);
 
         if window.is_null() {
-            Err(())
+            Err(CursesError::Newwin.into())
         } else {
             Ok(Self(window))
         }
     }
 
     /// Writes all the characters of `s` to `self`.
-    pub fn add_string(self, s: String) -> OkOrErr {
+    pub fn add_string(self, s: String) -> CurstResult<()> {
         // Define local variable to hold lifetime throughout the function.
-        let text = CString::new(s).map_err(|_| ())?;
+        let text = CString::new(s)?;
 
-        result(curses::waddstr(self.0, text.as_ptr()))
+        result(curses::waddstr(self.0, text.as_ptr()), CursesError::Waddstr)
     }
 
     /// Clears `self` from the cursor to the end of the line.
-    pub fn clear_to_line_end(self) -> OkOrErr {
-        result(curses::wclrtoeol(self.0))
+    pub fn clear_to_line_end(self) -> CurstResult<()> {
+        result(curses::wclrtoeol(self.0), CursesError::Wclrtoeol)
     }
 
     /// Returns the number of columns in `self`.
-    pub fn columns(self) -> Result<NonZeroU32, ()> {
+    pub fn columns(self) -> CurstResult<NonZeroU32> {
         non_zero_u32(curses::getmaxx(self.0))
     }
 
     /// Frees memory associated with `self`.
-    fn delete(self) -> OkOrErr {
-        result(curses::delwin(self.0))
+    fn delete(self) -> CurstResult<()> {
+        result(curses::delwin(self.0), CursesError::Delwin)
     }
 
     /// Deletes the character under the cursor.
@@ -300,8 +363,8 @@ impl Window {
     /// All characters to right on the same line are moved to the left one position and the
     /// last character is filled with a blank. The cursor position does not change.
     #[inline]
-    pub fn delete_char(self) -> OkOrErr {
-        result(curses::wdelch(self.0))
+    pub fn delete_char(self) -> CurstResult<()> {
+        result(curses::wdelch(self.0), CursesError::Wdelch)
     }
 
     /// Returns an [`Input`] from the terminal.
@@ -314,13 +377,13 @@ impl Window {
 
     /// Moves the cursor to `location`.
     #[inline]
-    pub fn move_to(self, location: Location) -> OkOrErr {
-        result(curses::wmove(self.0, location.line(), location.column()))
+    pub fn move_to(self, location: Location) -> CurstResult<()> {
+        result(curses::wmove(self.0, location.line(), location.column()), CursesError::Wmove)
     }
 
     /// Returns the number of rows in `self`.
     #[inline]
-    pub fn rows(self) -> Result<NonZeroU32, ()> {
+    pub fn rows(self) -> CurstResult<NonZeroU32> {
         non_zero_u32(curses::getmaxy(self.0))
     }
 
@@ -357,7 +420,7 @@ impl Curses {
 
     /// Returns a verbose description of the current terminal.
     #[inline]
-    pub fn description(&self) -> Result<&str, Utf8Error> {
+    pub fn description(&self) -> CurstResult<&str> {
         string(curses::longname())
     }
 
@@ -380,38 +443,38 @@ impl Curses {
 
     /// Returns a short description (14 characters) of the current terminal.
     #[inline]
-    pub fn name(&self) -> Result<&str, Utf8Error> {
+    pub fn name(&self) -> CurstResult<&str> {
         string(curses::termname())
     }
 
     /// Refreshes the physical screen to match the virtual screen.
-    pub fn refresh(&self) -> OkOrErr {
+    pub fn refresh(&self) -> CurstResult<()> {
         curses::update_panels();
-        result(curses::doupdate())
+        result(curses::doupdate(), CursesError::Doupdate)
     }
 
     /// Resizes the physical screen to `size`.
     ///
     /// Only resizes screen to a non zero value. If attempting to synchronize curses to a new screen size, use [`sync_screen_size`].
     #[inline]
-    pub fn resize_screen(&self, size: Size) -> OkOrErr {
-        result(curses::resize_term(size.lines(), size.columns()))
+    pub fn resize_screen(&self, size: Size) -> CurstResult<()> {
+        result(curses::resize_term(size.lines(), size.columns()), CursesError::ResizeTerm)
     }
 
     /// Sets if typed characters are echoed.
     #[inline]
-    pub fn set_echo(&self, is_enabled: bool) -> OkOrErr {
-        result(if is_enabled {
-            curses::echo()
+    pub fn set_echo(&self, is_enabled: bool) -> CurstResult<()> {
+        if is_enabled {
+            result(curses::echo(), CursesError::Echo)
         } else {
-            curses::noecho()
-        })
+            result(curses::noecho(), CursesError::Noecho)
+        }
     }
 
     /// Synchronizes curses to match the current screen size.
     #[inline]
-    pub fn sync_screen_size(&self) -> OkOrErr {
-        result(curses::resize_term(0, 0))
+    pub fn sync_screen_size(&self) -> CurstResult<()> {
+        result(curses::resize_term(0, 0), CursesError::ResizeTerm)
     }
 }
 
