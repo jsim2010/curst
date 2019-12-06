@@ -53,7 +53,10 @@
 mod curses;
 
 use {
-    core::{convert::TryFrom, num::{TryFromIntError, NonZeroU32}},
+    core::{
+        convert::TryFrom,
+        num::{NonZeroU32, TryFromIntError},
+    },
     curses::PANEL,
     displaydoc::Display as DocDisplay,
     parse_display::Display as ParseDisplay,
@@ -378,7 +381,10 @@ impl Window {
     /// Moves the cursor to `location`.
     #[inline]
     pub fn move_to(self, location: Location) -> CurstResult<()> {
-        result(curses::wmove(self.0, location.line(), location.column()), CursesError::Wmove)
+        result(
+            curses::wmove(self.0, location.line(), location.column()),
+            CursesError::Wmove,
+        )
     }
 
     /// Returns the number of rows in `self`.
@@ -458,7 +464,10 @@ impl Curses {
     /// Only resizes screen to a non zero value. If attempting to synchronize curses to a new screen size, use [`sync_screen_size`].
     #[inline]
     pub fn resize_screen(&self, size: Size) -> CurstResult<()> {
-        result(curses::resize_term(size.lines(), size.columns()), CursesError::ResizeTerm)
+        result(
+            curses::resize_term(size.lines(), size.columns()),
+            CursesError::ResizeTerm,
+        )
     }
 
     /// Sets if typed characters are echoed.
